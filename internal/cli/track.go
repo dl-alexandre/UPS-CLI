@@ -43,11 +43,12 @@ func (c *TrackCmd) Run(globals *Globals) error {
 		return fmt.Errorf("UPS credentials not configured. Set UPS_CLIENT_ID and UPS_CLIENT_SECRET environment variables, or configure in config file")
 	}
 
-	// Create token provider
+	// Create token provider with disk caching
 	tokenProvider := api.NewTokenProvider(
 		upsConfig.ClientID,
 		upsConfig.ClientSecret,
 		upsConfig.BaseURL,
+		globals.Config.GetCacheDir(), // Enable disk caching
 	)
 
 	// Create API client
@@ -62,9 +63,14 @@ func (c *TrackCmd) Run(globals *Globals) error {
 	// Execute tracking request
 	ctx := context.Background()
 
+	locale := upsConfig.Locale
+	if locale == "" {
+		locale = "en_US"
+	}
+
 	if c.Raw {
 		// Output raw JSON
-		body, err := client.TrackRaw(ctx, c.TrackingNumber)
+		body, err := client.TrackRaw(ctx, c.TrackingNumber, locale)
 		if err != nil {
 			return fmt.Errorf("tracking failed: %w", err)
 		}
@@ -73,7 +79,7 @@ func (c *TrackCmd) Run(globals *Globals) error {
 	}
 
 	// Get formatted tracking response
-	response, err := client.Track(ctx, c.TrackingNumber)
+	response, err := client.Track(ctx, c.TrackingNumber, locale)
 	if err != nil {
 		return fmt.Errorf("tracking failed: %w", err)
 	}

@@ -37,6 +37,7 @@ type UPSConfig struct {
 	ClientSecret string `mapstructure:"client_secret"`
 	Env          string `mapstructure:"env"`
 	BaseURL      string `mapstructure:"base_url"`
+	Locale       string `mapstructure:"locale"`
 }
 
 // Flags holds command-line flag values
@@ -61,8 +62,8 @@ const (
 	DefaultConfigType = "yaml"
 
 	// UPS defaults
-	UPSProductionURL = "https://onlinetools.ups.com"
-	UPSSandboxURL    = "https://wwwcie.ups.com"
+	UPSProductionURL = "https://onlinetools.ups.com/api"
+	UPSSandboxURL    = "https://wwwcie.ups.com/api"
 )
 
 // Load loads configuration from file and environment variables
@@ -75,6 +76,7 @@ func Load(flags Flags) (*Config, error) {
 	v.SetDefault("cache.enabled", true)
 	v.SetDefault("cache.ttl", DefaultCacheTTL)
 	v.SetDefault("ups.env", "production")
+	v.SetDefault("ups.locale", "en_US")
 
 	// Set config file if provided
 	if flags.ConfigFile != "" {

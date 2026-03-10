@@ -63,11 +63,21 @@ func (c *Client) doRequest(ctx context.Context, method, url string, body interfa
 	}
 
 	req := c.client.R().SetContext(ctx)
+
+	// Add UPS transaction headers for support/debugging
+	req.SetHeader("transId", generateTransactionID())
+	req.SetHeader("transactionSrc", "ups-cli")
+
 	if body != nil {
 		req.SetBody(body)
 	}
 
 	return req.Execute(method, url)
+}
+
+// generateTransactionID creates a simple transaction ID
+func generateTransactionID() string {
+	return fmt.Sprintf("upscli-%d", time.Now().UnixNano())
 }
 
 // Tracking types
@@ -119,8 +129,14 @@ type TrackingError struct {
 }
 
 // Track tracks a UPS shipment by tracking number
-func (c *Client) Track(ctx context.Context, trackingNumber string) (*TrackingResponse, error) {
-	endpoint := fmt.Sprintf("/api/track/v1/details/%s", trackingNumber)
+func (c *Client) Track(ctx context.Context, trackingNumber string, locale string) (*TrackingResponse, error) {
+	endpoint := fmt.Sprintf("/track/v1/details/%s", trackingNumber)
+
+	// Add locale query parameter
+	if locale == "" {
+		locale = "en_US"
+	}
+	endpoint = endpoint + "?locale=" + locale
 
 	resp, err := c.doRequest(ctx, "GET", endpoint, nil)
 	if err != nil {
@@ -147,8 +163,14 @@ func (c *Client) Track(ctx context.Context, trackingNumber string) (*TrackingRes
 }
 
 // TrackRaw returns the raw tracking response body (for debugging)
-func (c *Client) TrackRaw(ctx context.Context, trackingNumber string) ([]byte, error) {
-	endpoint := fmt.Sprintf("/api/track/v1/details/%s", trackingNumber)
+func (c *Client) TrackRaw(ctx context.Context, trackingNumber string, locale string) ([]byte, error) {
+	endpoint := fmt.Sprintf("/track/v1/details/%s", trackingNumber)
+
+	// Add locale query parameter
+	if locale == "" {
+		locale = "en_US"
+	}
+	endpoint = endpoint + "?locale=" + locale
 
 	resp, err := c.doRequest(ctx, "GET", endpoint, nil)
 	if err != nil {

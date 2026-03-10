@@ -1,6 +1,12 @@
 # Example configuration file for ups CLI
 # Copy this file to ~/.config/ups/config.yaml and customize
 
+# SECURITY NOTES:
+# - Never commit this file with real credentials
+# - Credentials in this file should have restrictive permissions (chmod 600)
+# - Prefer environment variables (UPS_CLIENT_ID, UPS_CLIENT_SECRET) for CI/CD
+# - OAuth tokens are cached to disk with 0600 permissions automatically
+
 # UPS API Configuration
 ups:
   # Your UPS API Client ID (from UPS Developer Portal)
@@ -15,10 +21,14 @@ ups:
   # Can also be set via UPS_ENV environment variable
   env: "production"
   
+  # Locale for API responses (default: en_US)
+  # Can also be set via UPS_LOCALE environment variable
+  # locale: "en_US"
+  
   # Optional: Override the base URL
-  # Production: https://onlinetools.ups.com
-  # Sandbox: https://wwwcie.ups.com
-  # base_url: "https://onlinetools.ups.com"
+  # Production: https://onlinetools.ups.com/api
+  # Sandbox: https://wwwcie.ups.com/api
+  # base_url: "https://onlinetools.ups.com/api"
 
 # General API Settings
 api:
