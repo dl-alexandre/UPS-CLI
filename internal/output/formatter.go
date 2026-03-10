@@ -566,3 +566,118 @@ func (p *Printer) printShipmentValidationMarkdown(shipment *api.ShipmentResponse
 
 	return nil
 }
+
+// PrintShipmentCreate prints shipment creation results (always shows alerts)
+func (p *Printer) PrintShipmentCreate(shipment *api.ShipmentResponse, format string) error {
+	if format == "" {
+		format = p.format
+	}
+
+	switch format {
+	case "json":
+		return p.printJSON(shipment)
+	case "markdown":
+		return p.printShipmentCreateMarkdown(shipment)
+	case "table":
+		return p.printShipmentCreateTable(shipment)
+	default:
+		return fmt.Errorf("unsupported format: %s", format)
+	}
+}
+
+// printShipmentCreateTable prints creation results as a table (alerts shown by default)
+func (p *Printer) printShipmentCreateTable(shipment *api.ShipmentResponse) error {
+	response := shipment.ShipmentResponse.Response
+	results := shipment.ShipmentResponse.ShipmentResults
+
+	fmt.Println("✓ Shipment Created Successfully")
+	fmt.Println()
+
+	// Print tracking number if available
+	if results != nil && len(results.PackageResults) > 0 {
+		trackingNumber := results.PackageResults[0].TrackingNumber
+		if trackingNumber != "" {
+			fmt.Printf("Tracking Number: %s\n", trackingNumber)
+			fmt.Println()
+		}
+	}
+
+	// Print charges
+	if results != nil && results.ShipmentCharges != nil {
+		tbl := table.New("Charge Type", "Amount", "Currency").WithWriter(os.Stdout)
+		if p.useColor {
+			tbl.WithHeaderFormatter(func(format string, vals ...interface{}) string {
+				return fmt.Sprintf("\033[1m%s\033[0m", fmt.Sprintf(format, vals...))
+			})
+		}
+
+		tbl.AddRow("Transportation",
+			results.ShipmentCharges.TransportationCharges.MonetaryValue,
+			results.ShipmentCharges.TransportationCharges.CurrencyCode)
+		tbl.AddRow("Service Options",
+			results.ShipmentCharges.ServiceOptionsCharges.MonetaryValue,
+			results.ShipmentCharges.ServiceOptionsCharges.CurrencyCode)
+		tbl.AddRow("Total",
+			results.ShipmentCharges.TotalCharges.MonetaryValue,
+			results.ShipmentCharges.TotalCharges.CurrencyCode)
+
+		tbl.Print()
+		fmt.Println()
+	}
+
+	// Print alerts (always shown for create, even without --verbose)
+	if len(response.Alert) > 0 {
+		fmt.Println("Alerts:")
+		for _, alert := range response.Alert {
+			fmt.Printf("  ⚠ [%s] %s\n", alert.Code, alert.Description)
+		}
+		fmt.Println()
+	}
+
+	return nil
+}
+
+// printShipmentCreateMarkdown prints creation results as markdown
+func (p *Printer) printShipmentCreateMarkdown(shipment *api.ShipmentResponse) error {
+	response := shipment.ShipmentResponse.Response
+	results := shipment.ShipmentResponse.ShipmentResults
+
+	fmt.Println("# Shipment Created")
+	fmt.Println()
+
+	// Print tracking number
+	if results != nil && len(results.PackageResults) > 0 {
+		trackingNumber := results.PackageResults[0].TrackingNumber
+		if trackingNumber != "" {
+			fmt.Printf("**Tracking Number:** %s\n\n", trackingNumber)
+		}
+	}
+
+	// Print charges
+	if results != nil && results.ShipmentCharges != nil {
+		fmt.Println("## Charges")
+		fmt.Println()
+		fmt.Printf("- **Transportation:** %s %s\n",
+			results.ShipmentCharges.TransportationCharges.MonetaryValue,
+			results.ShipmentCharges.TransportationCharges.CurrencyCode)
+		fmt.Printf("- **Service Options:** %s %s\n",
+			results.ShipmentCharges.ServiceOptionsCharges.MonetaryValue,
+			results.ShipmentCharges.ServiceOptionsCharges.CurrencyCode)
+		fmt.Printf("- **Total:** %s %s\n",
+			results.ShipmentCharges.TotalCharges.MonetaryValue,
+			results.ShipmentCharges.TotalCharges.CurrencyCode)
+		fmt.Println()
+	}
+
+	// Print alerts (always shown for create)
+	if len(response.Alert) > 0 {
+		fmt.Println("## Alerts")
+		fmt.Println()
+		for _, alert := range response.Alert {
+			fmt.Printf("- **%s:** %s\n", alert.Code, alert.Description)
+		}
+		fmt.Println()
+	}
+
+	return nil
+}

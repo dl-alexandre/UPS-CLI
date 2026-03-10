@@ -2,8 +2,11 @@ package cli
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"unicode"
 
 	"github.com/dl-alexandre/UPS-CLI/internal/api"
@@ -27,13 +30,34 @@ type ShipCmd struct {
 	Service       string `help:"Service code" flag:"service"`
 	AccountNumber string `help:"UPS account number for billing" flag:"account"`
 
+	// Idempotency
+	RequestID string `help:"Unique request ID for idempotency (required for --create)" flag:"request-id"`
+
+	// Label output
+	LabelFormat string `help:"Label format: PDF" flag:"label-format" enum:"PDF" default:"PDF"`
+	LabelOut    string `help:"Label output file path" flag:"label-out"`
+
 	// Control flags
-	Validate bool   `help:"Validate shipment only (do not create)" flag:"validate"`
-	Format   string `help:"Output format (overrides global)" kong:"-"`
-	Raw      bool   `help:"Output raw JSON response" flag:"raw"`
+	Validate bool `help:"Validate shipment only (do not create)" flag:"validate"`
+	Create   bool `help:"Create shipment and generate label" flag:"create"`
+
+	// Production confirmations (required when UPS_ENV=production and --create)
+	ConfirmProduction bool `help:"Confirm production environment" flag:"confirm-production"`
+	ConfirmCharge     bool `help:"Confirm charges will be applied" flag:"confirm-charge"`
+
+	Format string `help:"Output format (overrides global)" kong:"-"`
+	Raw    bool   `help:"Output raw JSON response" flag:"raw"`
 }
 
 func (c *ShipCmd) Run(globals *Globals) error {
+	// Validate mode selection
+	if c.Validate && c.Create {
+		return fmt.Errorf("cannot use both --validate and --create")
+	}
+	if !c.Validate && !c.Create {
+		return fmt.Errorf("must specify either --validate or --create")
+	}
+
 	// Validate inputs
 	if err := c.validate(); err != nil {
 		return err
@@ -59,6 +83,21 @@ func (c *ShipCmd) Run(globals *Globals) error {
 		return fmt.Errorf("UPS credentials not configured. Set UPS_CLIENT_ID and UPS_CLIENT_SECRET environment variables, or configure in config file")
 	}
 
+	// Check production confirmations for create
+	if c.Create && upsConfig.Env == "production" {
+		if !c.ConfirmProduction {
+			return fmt.Errorf("UPS_ENV=production requires --confirm-production flag")
+		}
+		if !c.ConfirmCharge {
+			return fmt.Errorf("UPS_ENV=production requires --confirm-charge flag")
+		}
+	}
+
+	// Check request-id for create (idempotency)
+	if c.Create && c.RequestID == "" {
+		return fmt.Errorf("--create requires --request-id for idempotency")
+	}
+
 	// Log environment in verbose mode
 	if globals.Verbose {
 		fmt.Fprintf(os.Stderr, "Environment: %s\n", upsConfig.Env)
@@ -67,6 +106,10 @@ func (c *ShipCmd) Run(globals *Globals) error {
 		fmt.Fprintf(os.Stderr, "Weight: %s %s\n", c.Weight, c.WeightUnit)
 		if c.Validate {
 			fmt.Fprintf(os.Stderr, "Mode: Validate only\n")
+		}
+		if c.Create {
+			fmt.Fprintf(os.Stderr, "Mode: Create shipment\n")
+			fmt.Fprintf(os.Stderr, "Request ID: %s\n", c.RequestID)
 		}
 	}
 
@@ -104,7 +147,14 @@ func (c *ShipCmd) Run(globals *Globals) error {
 		return fmt.Errorf("failed to build shipment request: %w", err)
 	}
 
-	// Execute shipment validation
+	// Set request ID for idempotency if creating
+	if c.Create && c.RequestID != "" {
+		if req.ShipmentRequest != nil && req.ShipmentRequest.Request != nil && req.ShipmentRequest.Request.TransactionReference != nil {
+			req.ShipmentRequest.Request.TransactionReference.TransactionIdentifier = c.RequestID
+		}
+	}
+
+	// Execute
 	ctx := context.Background()
 	locale := upsConfig.Locale
 	if locale == "" {
@@ -112,33 +162,137 @@ func (c *ShipCmd) Run(globals *Globals) error {
 	}
 
 	if c.Validate {
-		// Validation mode
-		if c.Raw {
-			body, err := client.ShipValidateRaw(ctx, req, locale)
-			if err != nil {
-				return fmt.Errorf("validation failed: %w", err)
-			}
-			fmt.Fprintln(os.Stdout, string(body))
-			return nil
-		}
+		return c.runValidate(ctx, client, req, locale, globals)
+	}
 
-		response, err := client.ShipValidate(ctx, req, locale)
+	return c.runCreate(ctx, client, req, locale, globals)
+}
+
+// runValidate handles validation mode
+func (c *ShipCmd) runValidate(ctx context.Context, client *api.Client, req *api.ShipmentRequest, locale string, globals *Globals) error {
+	if c.Raw {
+		body, err := client.ShipValidateRaw(ctx, req, locale)
 		if err != nil {
 			return fmt.Errorf("validation failed: %w", err)
 		}
+		fmt.Fprintln(os.Stdout, string(body))
+		return nil
+	}
 
-		// Print validation result
+	response, err := client.ShipValidate(ctx, req, locale)
+	if err != nil {
+		return fmt.Errorf("validation failed: %w", err)
+	}
+
+	// Print validation result
+	format := c.Format
+	if format == "" {
+		format = globals.Format
+	}
+
+	printer := globals.GetPrinter()
+	return printer.PrintShipmentValidation(response, format)
+}
+
+// runCreate handles create mode
+func (c *ShipCmd) runCreate(ctx context.Context, client *api.Client, req *api.ShipmentRequest, locale string, globals *Globals) error {
+	var response *api.ShipmentResponse
+	var body []byte
+	var err error
+
+	if c.Raw {
+		body, err = client.ShipCreateRaw(ctx, req, locale)
+		if err != nil {
+			return fmt.Errorf("shipment creation failed: %w", err)
+		}
+		fmt.Fprintln(os.Stdout, string(body))
+	} else {
+		response, err = client.ShipCreate(ctx, req, locale)
+		if err != nil {
+			return fmt.Errorf("shipment creation failed: %w", err)
+		}
+
+		// Print creation result (always show alerts for create)
 		format := c.Format
 		if format == "" {
 			format = globals.Format
 		}
 
 		printer := globals.GetPrinter()
-		return printer.PrintShipmentValidation(response, format)
+		if err := printer.PrintShipmentCreate(response, format); err != nil {
+			return err
+		}
 	}
 
-	// Full shipment mode (not yet implemented)
-	return fmt.Errorf("full shipment creation not yet implemented. Use --validate flag for validation only")
+	// Handle label output for create
+	if c.Create {
+		if c.Raw {
+			// Parse from raw body to extract label
+			var resp api.ShipmentResponse
+			if err := json.Unmarshal(body, &resp); err != nil {
+				return fmt.Errorf("failed to parse response for label: %w", err)
+			}
+			response = &resp
+		}
+
+		// Extract and write label
+		if err := c.writeLabel(response); err != nil {
+			return fmt.Errorf("failed to write label: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// writeLabel extracts and writes the shipping label to file
+func (c *ShipCmd) writeLabel(response *api.ShipmentResponse) error {
+	if response == nil || response.ShipmentResponse.ShipmentResults == nil {
+		return fmt.Errorf("no shipment results in response")
+	}
+
+	results := response.ShipmentResponse.ShipmentResults
+	if len(results.PackageResults) == 0 {
+		return fmt.Errorf("no package results in response")
+	}
+
+	// Get the first package's label
+	pkg := results.PackageResults[0]
+	if pkg.ShippingLabel == nil || pkg.ShippingLabel.GraphicImage == "" {
+		return fmt.Errorf("no label data in response")
+	}
+
+	// Determine output path
+	outputPath := c.LabelOut
+	if outputPath == "" {
+		// Default to tracking number as filename
+		if pkg.TrackingNumber != "" {
+			outputPath = fmt.Sprintf("%s.pdf", pkg.TrackingNumber)
+		} else {
+			outputPath = "label.pdf"
+		}
+	}
+
+	// Ensure directory exists
+	dir := filepath.Dir(outputPath)
+	if dir != "." && dir != "" {
+		if err := os.MkdirAll(dir, 0750); err != nil {
+			return fmt.Errorf("failed to create directory: %w", err)
+		}
+	}
+
+	// Decode base64 and write
+	labelData, err := base64.StdEncoding.DecodeString(pkg.ShippingLabel.GraphicImage)
+	if err != nil {
+		return fmt.Errorf("failed to decode label data: %w", err)
+	}
+
+	// Write with restrictive permissions (no execute, owner read/write only)
+	if err := os.WriteFile(outputPath, labelData, 0600); err != nil {
+		return fmt.Errorf("failed to write label file: %w", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Label written to: %s\n", outputPath)
+	return nil
 }
 
 // validate validates all ship command inputs

@@ -261,3 +261,74 @@ func NewShipmentRequest(fromPostal, toPostal, shipperPostal, countryFrom, countr
 
 	return req, nil
 }
+
+// ShipCreate creates a shipment and generates label
+// Uses NoRetryConfig: no retries except what the transport layer handles
+func (c *Client) ShipCreate(ctx context.Context, req *ShipmentRequest, locale string) (*ShipmentResponse, error) {
+	endpoint := "/ship/v1/shipments"
+
+	// Ensure request option is set to "nonvalidate" for create
+	if req.ShipmentRequest != nil && req.ShipmentRequest.Request != nil {
+		req.ShipmentRequest.Request.RequestOption = "nonvalidate"
+	}
+
+	// Add locale query parameter
+	if locale == "" {
+		locale = "en_US"
+	}
+	endpoint = endpoint + "?locale=" + locale
+
+	// Use no retry config for create (safety first)
+	resp, err := c.doRequestWithRetry(ctx, "POST", endpoint, req, NoRetryConfig())
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode() != http.StatusOK {
+		return nil, ParseUPSError(resp)
+	}
+
+	var result ShipmentResponse
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("failed to decode shipment response: %w", err)
+	}
+
+	// Check for UPS API errors in response body
+	if len(result.ShipmentResponse.Response.Error) > 0 {
+		errInfo := result.ShipmentResponse.Response.Error[0]
+		return nil, &UPSError{
+			StatusCode: resp.StatusCode(),
+			Code:       errInfo.ErrorCode,
+			Message:    errInfo.ErrorMessage,
+		}
+	}
+
+	return &result, nil
+}
+
+// ShipCreateRaw returns the raw create response body (for debugging)
+func (c *Client) ShipCreateRaw(ctx context.Context, req *ShipmentRequest, locale string) ([]byte, error) {
+	endpoint := "/ship/v1/shipments"
+
+	// Ensure request option is set to "nonvalidate" for create
+	if req.ShipmentRequest != nil && req.ShipmentRequest.Request != nil {
+		req.ShipmentRequest.Request.RequestOption = "nonvalidate"
+	}
+
+	// Add locale query parameter
+	if locale == "" {
+		locale = "en_US"
+	}
+	endpoint = endpoint + "?locale=" + locale
+
+	resp, err := c.doRequestWithRetry(ctx, "POST", endpoint, req, NoRetryConfig())
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode() != http.StatusOK {
+		return nil, ParseUPSError(resp)
+	}
+
+	return resp.Body(), nil
+}
