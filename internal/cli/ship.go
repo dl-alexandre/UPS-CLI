@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"unicode"
 
 	"github.com/dl-alexandre/UPS-CLI/internal/api"
@@ -31,7 +32,7 @@ type ShipCmd struct {
 	AccountNumber string `help:"UPS account number for billing" flag:"account"`
 
 	// Idempotency
-	RequestID string `help:"Unique request ID for idempotency (required for --create)" flag:"request-id"`
+	RequestID string `help:"Unique request ID for idempotency. Sent to UPS as transaction reference. May help detect duplicates but UPS may still create duplicates on ambiguous failures." flag:"request-id"`
 
 	// Label output
 	LabelFormat string `help:"Label format: PDF" flag:"label-format" enum:"PDF" default:"PDF"`
@@ -203,13 +204,13 @@ func (c *ShipCmd) runCreate(ctx context.Context, client *api.Client, req *api.Sh
 	if c.Raw {
 		body, err = client.ShipCreateRaw(ctx, req, locale)
 		if err != nil {
-			return fmt.Errorf("shipment creation failed: %w", err)
+			return c.handleCreateError(err)
 		}
 		fmt.Fprintln(os.Stdout, string(body))
 	} else {
 		response, err = client.ShipCreate(ctx, req, locale)
 		if err != nil {
-			return fmt.Errorf("shipment creation failed: %w", err)
+			return c.handleCreateError(err)
 		}
 
 		// Print creation result (always show alerts for create)
@@ -244,7 +245,8 @@ func (c *ShipCmd) runCreate(ctx context.Context, client *api.Client, req *api.Sh
 	return nil
 }
 
-// writeLabel extracts and writes the shipping label to file
+// writeLabel extracts and writes the shipping label to file atomically
+// Uses temp file + fsync + rename to avoid partial files
 func (c *ShipCmd) writeLabel(response *api.ShipmentResponse) error {
 	if response == nil || response.ShipmentResponse.ShipmentResults == nil {
 		return fmt.Errorf("no shipment results in response")
@@ -280,19 +282,74 @@ func (c *ShipCmd) writeLabel(response *api.ShipmentResponse) error {
 		}
 	}
 
-	// Decode base64 and write
+	// Decode base64
 	labelData, err := base64.StdEncoding.DecodeString(pkg.ShippingLabel.GraphicImage)
 	if err != nil {
 		return fmt.Errorf("failed to decode label data: %w", err)
 	}
 
-	// Write with restrictive permissions (no execute, owner read/write only)
-	if err := os.WriteFile(outputPath, labelData, 0600); err != nil {
-		return fmt.Errorf("failed to write label file: %w", err)
+	// Atomic write: temp file -> fsync -> rename
+	tempPath := outputPath + ".tmp"
+
+	// Write to temp file with restrictive permissions
+	if err := os.WriteFile(tempPath, labelData, 0600); err != nil {
+		return fmt.Errorf("failed to write temp label file: %w", err)
+	}
+
+	// Sync to disk to ensure data is written
+	if file, err := os.Open(tempPath); err == nil {
+		file.Sync()
+		file.Close()
+	}
+
+	// Atomic rename
+	if err := os.Rename(tempPath, outputPath); err != nil {
+		// Clean up temp file on error
+		os.Remove(tempPath)
+		return fmt.Errorf("failed to finalize label file: %w", err)
 	}
 
 	fmt.Fprintf(os.Stderr, "Label written to: %s\n", outputPath)
 	return nil
+}
+
+// handleCreateError handles shipment creation errors with special guidance
+// for ambiguous failures that may have succeeded server-side
+func (c *ShipCmd) handleCreateError(err error) error {
+	errStr := err.Error()
+
+	// Detect ambiguous errors (network timeouts, connection resets, etc.)
+	// These may have been processed by UPS even though we got an error
+	ambiguousIndicators := []string{
+		"timeout",
+		"connection reset",
+		"no such host",
+		"i/o timeout",
+		"context deadline exceeded",
+		"EOF",
+		"connection refused",
+	}
+
+	for _, indicator := range ambiguousIndicators {
+		if containsIgnoreCase(errStr, indicator) {
+			return fmt.Errorf(`%w
+
+⚠️  WARNING: This error may indicate the request was processed by UPS before the connection failed.
+
+DO NOT retry with a new --request-id. Instead:
+  1. Check your UPS account for the shipment
+  2. If not found, retry with the SAME --request-id: %q
+  3. If found, download the label from your UPS account
+
+The shipment may have been created with charges applied.`, err, c.RequestID)
+		}
+	}
+
+	return fmt.Errorf("shipment creation failed: %w", err)
+}
+
+func containsIgnoreCase(s, substr string) bool {
+	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }
 
 // validate validates all ship command inputs
