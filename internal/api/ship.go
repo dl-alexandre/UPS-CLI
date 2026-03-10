@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/go-resty/resty/v2"
 )
 
 // ShipmentRequest represents a UPS shipment creation request
@@ -262,9 +264,16 @@ func NewShipmentRequest(fromPostal, toPostal, shipperPostal, countryFrom, countr
 	return req, nil
 }
 
+// ShipCreateResult includes both the response and the transaction ID for support
+type ShipCreateResult struct {
+	Response *ShipmentResponse
+	TransId  string
+}
+
 // ShipCreate creates a shipment and generates label
 // Uses NoRetryConfig: no retries except what the transport layer handles
-func (c *Client) ShipCreate(ctx context.Context, req *ShipmentRequest, locale string) (*ShipmentResponse, error) {
+// Returns the transaction ID for support/debugging
+func (c *Client) ShipCreateWithTransId(ctx context.Context, req *ShipmentRequest, locale string) (*ShipCreateResult, error) {
 	endpoint := "/ship/v1/shipments"
 
 	// Ensure request option is set to "nonvalidate" for create
@@ -278,8 +287,33 @@ func (c *Client) ShipCreate(ctx context.Context, req *ShipmentRequest, locale st
 	}
 	endpoint = endpoint + "?locale=" + locale
 
-	// Use no retry config for create (safety first)
-	resp, err := c.doRequestWithRetry(ctx, "POST", endpoint, req, NoRetryConfig())
+	// Generate transId for this request
+	transId := generateTransactionID()
+
+	// Build request with transId
+	buildRequest := func() *resty.Request {
+		req := c.client.R()
+		req.Method = "POST"
+		req.URL = endpoint
+
+		// Add transaction headers
+		req.SetHeader("transId", transId)
+		req.SetHeader("transactionSrc", "ups-cli")
+
+		// Set body
+		req.SetBody(req)
+
+		// Add auth token
+		if c.tokenProvider != nil {
+			token, _ := c.tokenProvider.GetToken(ctx)
+			req.SetAuthToken(token)
+		}
+
+		return req
+	}
+
+	// Execute with no retry config for create (safety first)
+	resp, err := DoWithRetry(ctx, buildRequest, NoRetryConfig())
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +337,10 @@ func (c *Client) ShipCreate(ctx context.Context, req *ShipmentRequest, locale st
 		}
 	}
 
-	return &result, nil
+	return &ShipCreateResult{
+		Response: &result,
+		TransId:  transId,
+	}, nil
 }
 
 // ShipCreateRaw returns the raw create response body (for debugging)

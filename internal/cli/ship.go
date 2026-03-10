@@ -35,8 +35,9 @@ type ShipCmd struct {
 	RequestID string `help:"Unique request ID for idempotency. Sent to UPS as transaction reference. May help detect duplicates but UPS may still create duplicates on ambiguous failures." flag:"request-id"`
 
 	// Label output
-	LabelFormat string `help:"Label format: PDF" flag:"label-format" enum:"PDF" default:"PDF"`
-	LabelOut    string `help:"Label output file path" flag:"label-out"`
+	LabelFormat string `help:"Label format: PDF, ZPL" flag:"label-format" enum:"PDF,ZPL" default:"PDF"`
+	LabelOut    string `help:"Label output file path (use - for stdout with ZPL only)" flag:"label-out"`
+	LabelForce  bool   `help:"Overwrite existing label file" flag:"force"`
 
 	// Control flags
 	Validate bool `help:"Validate shipment only (do not create)" flag:"validate"`
@@ -199,19 +200,22 @@ func (c *ShipCmd) runValidate(ctx context.Context, client *api.Client, req *api.
 func (c *ShipCmd) runCreate(ctx context.Context, client *api.Client, req *api.ShipmentRequest, locale string, globals *Globals) error {
 	var response *api.ShipmentResponse
 	var body []byte
+	var transId string
 	var err error
 
 	if c.Raw {
 		body, err = client.ShipCreateRaw(ctx, req, locale)
 		if err != nil {
-			return c.handleCreateError(err)
+			return c.handleCreateError(err, transId)
 		}
 		fmt.Fprintln(os.Stdout, string(body))
 	} else {
-		response, err = client.ShipCreate(ctx, req, locale)
+		result, err := client.ShipCreateWithTransId(ctx, req, locale)
 		if err != nil {
-			return c.handleCreateError(err)
+			return c.handleCreateError(err, transId)
 		}
+		response = result.Response
+		transId = result.TransId
 
 		// Print creation result (always show alerts for create)
 		format := c.Format
@@ -222,6 +226,30 @@ func (c *ShipCmd) runCreate(ctx context.Context, client *api.Client, req *api.Sh
 		printer := globals.GetPrinter()
 		if err := printer.PrintShipmentCreate(response, format); err != nil {
 			return err
+		}
+	}
+
+	// Print success summary
+	if response != nil && response.ShipmentResponse.ShipmentResults != nil {
+		results := response.ShipmentResponse.ShipmentResults
+		if len(results.PackageResults) > 0 {
+			pkg := results.PackageResults[0]
+			if pkg.TrackingNumber != "" {
+				fmt.Fprintf(os.Stderr, "Tracking Number: %s\n", pkg.TrackingNumber)
+			}
+		}
+	}
+	fmt.Fprintf(os.Stderr, "Request ID: %s\n", c.RequestID)
+	fmt.Fprintf(os.Stderr, "Transaction ID: %s\n", transId)
+
+	// Print any alerts
+	if response != nil {
+		alerts := response.ShipmentResponse.Response.Alert
+		if len(alerts) > 0 {
+			fmt.Fprintln(os.Stderr, "\nAlerts:")
+			for _, alert := range alerts {
+				fmt.Fprintf(os.Stderr, "  ⚠ [%s] %s\n", alert.Code, alert.Description)
+			}
 		}
 	}
 
@@ -247,6 +275,7 @@ func (c *ShipCmd) runCreate(ctx context.Context, client *api.Client, req *api.Sh
 
 // writeLabel extracts and writes the shipping label to file atomically
 // Uses temp file + fsync + rename to avoid partial files
+// Supports PDF (base64) and ZPL (plain text) formats
 func (c *ShipCmd) writeLabel(response *api.ShipmentResponse) error {
 	if response == nil || response.ShipmentResponse.ShipmentResults == nil {
 		return fmt.Errorf("no shipment results in response")
@@ -259,7 +288,7 @@ func (c *ShipCmd) writeLabel(response *api.ShipmentResponse) error {
 
 	// Get the first package's label
 	pkg := results.PackageResults[0]
-	if pkg.ShippingLabel == nil || pkg.ShippingLabel.GraphicImage == "" {
+	if pkg.ShippingLabel == nil {
 		return fmt.Errorf("no label data in response")
 	}
 
@@ -267,29 +296,75 @@ func (c *ShipCmd) writeLabel(response *api.ShipmentResponse) error {
 	outputPath := c.LabelOut
 	if outputPath == "" {
 		// Default to tracking number as filename
+		ext := strings.ToLower(c.LabelFormat)
 		if pkg.TrackingNumber != "" {
-			outputPath = fmt.Sprintf("%s.pdf", pkg.TrackingNumber)
+			outputPath = fmt.Sprintf("%s.%s", pkg.TrackingNumber, ext)
 		} else {
-			outputPath = "label.pdf"
+			outputPath = fmt.Sprintf("label.%s", ext)
+		}
+	}
+
+	// Handle stdout output for ZPL only
+	if outputPath == "-" {
+		if strings.ToUpper(c.LabelFormat) != "ZPL" {
+			return fmt.Errorf("stdout output (-) only allowed for ZPL format, not %s", c.LabelFormat)
+		}
+		// ZPL is safe to print to stdout
+		if pkg.ShippingLabel.GraphicImage == "" {
+			return fmt.Errorf("no ZPL label data in response")
+		}
+		fmt.Fprintln(os.Stdout, pkg.ShippingLabel.GraphicImage)
+		return nil
+	}
+
+	// Security: prevent directory traversal
+	cleanPath := filepath.Clean(outputPath)
+	if strings.Contains(cleanPath, "..") {
+		return fmt.Errorf("invalid label path: directory traversal not allowed")
+	}
+
+	// Check if file exists and --force not set
+	if !c.LabelForce {
+		if _, err := os.Stat(cleanPath); err == nil {
+			return fmt.Errorf("label file already exists: %s (use --force to overwrite)", cleanPath)
 		}
 	}
 
 	// Ensure directory exists
-	dir := filepath.Dir(outputPath)
+	dir := filepath.Dir(cleanPath)
 	if dir != "." && dir != "" {
 		if err := os.MkdirAll(dir, 0750); err != nil {
 			return fmt.Errorf("failed to create directory: %w", err)
 		}
 	}
 
-	// Decode base64
-	labelData, err := base64.StdEncoding.DecodeString(pkg.ShippingLabel.GraphicImage)
-	if err != nil {
-		return fmt.Errorf("failed to decode label data: %w", err)
+	var labelData []byte
+	var err error
+
+	// Handle different label formats
+	format := strings.ToUpper(c.LabelFormat)
+	switch format {
+	case "PDF":
+		// PDF is base64 encoded
+		if pkg.ShippingLabel.GraphicImage == "" {
+			return fmt.Errorf("no PDF label data in response")
+		}
+		labelData, err = base64.StdEncoding.DecodeString(pkg.ShippingLabel.GraphicImage)
+		if err != nil {
+			return fmt.Errorf("failed to decode PDF label data: %w", err)
+		}
+	case "ZPL":
+		// ZPL is plain text
+		if pkg.ShippingLabel.GraphicImage == "" {
+			return fmt.Errorf("no ZPL label data in response")
+		}
+		labelData = []byte(pkg.ShippingLabel.GraphicImage)
+	default:
+		return fmt.Errorf("unsupported label format: %s", c.LabelFormat)
 	}
 
 	// Atomic write: temp file -> fsync -> rename
-	tempPath := outputPath + ".tmp"
+	tempPath := cleanPath + ".tmp"
 
 	// Write to temp file with restrictive permissions
 	if err := os.WriteFile(tempPath, labelData, 0600); err != nil {
@@ -303,19 +378,20 @@ func (c *ShipCmd) writeLabel(response *api.ShipmentResponse) error {
 	}
 
 	// Atomic rename
-	if err := os.Rename(tempPath, outputPath); err != nil {
+	if err := os.Rename(tempPath, cleanPath); err != nil {
 		// Clean up temp file on error
 		os.Remove(tempPath)
 		return fmt.Errorf("failed to finalize label file: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Label written to: %s\n", outputPath)
+	fmt.Fprintf(os.Stderr, "Label written to: %s\n", cleanPath)
 	return nil
 }
 
 // handleCreateError handles shipment creation errors with special guidance
 // for ambiguous failures that may have succeeded server-side
-func (c *ShipCmd) handleCreateError(err error) error {
+// transId is included for UPS support ticket reference
+func (c *ShipCmd) handleCreateError(err error, transId string) error {
 	errStr := err.Error()
 
 	// Detect ambiguous errors (network timeouts, connection resets, etc.)
@@ -332,7 +408,8 @@ func (c *ShipCmd) handleCreateError(err error) error {
 
 	for _, indicator := range ambiguousIndicators {
 		if containsIgnoreCase(errStr, indicator) {
-			return fmt.Errorf(`%w
+			// Build the error message without %w in Sprintf
+			baseMsg := fmt.Sprintf(`shipment creation failed: %s
 
 ⚠️  WARNING: This error may indicate the request was processed by UPS before the connection failed.
 
@@ -341,7 +418,13 @@ DO NOT retry with a new --request-id. Instead:
   2. If not found, retry with the SAME --request-id: %q
   3. If found, download the label from your UPS account
 
-The shipment may have been created with charges applied.`, err, c.RequestID)
+The shipment may have been created with charges applied.`, err.Error(), c.RequestID)
+
+			if transId != "" {
+				baseMsg += fmt.Sprintf("\n\nTransaction ID for UPS support: %s", transId)
+			}
+
+			return fmt.Errorf("%s", baseMsg)
 		}
 	}
 
