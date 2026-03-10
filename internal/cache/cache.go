@@ -100,9 +100,22 @@ func (c *Cache) Clear() error {
 	return os.RemoveAll(c.dir)
 }
 
+// DefaultCacheDir returns the default cache directory for the application
+func DefaultCacheDir() string {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		// Fallback to temp directory
+		dir = os.TempDir()
+	}
+	return filepath.Join(dir, "ups")
+}
+
 // filePath returns the file path for a cache key
 func (c *Cache) filePath(key string) string {
 	// Use first 2 chars of key as subdirectory to avoid too many files in one dir
+	if len(key) < 2 {
+		return filepath.Join(c.dir, key)
+	}
 	return filepath.Join(c.dir, key[:2], key)
 }
 

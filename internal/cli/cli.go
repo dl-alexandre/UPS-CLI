@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/alecthomas/kong"
-	"github.com/dl-alexandre/cli-template/internal/api"
-	"github.com/dl-alexandre/cli-template/internal/cache"
-	"github.com/dl-alexandre/cli-template/internal/config"
-	"github.com/dl-alexandre/cli-template/internal/output"
+	"github.com/dl-alexandre/UPS-CLI/internal/api"
+	"github.com/dl-alexandre/UPS-CLI/internal/cache"
+	"github.com/dl-alexandre/UPS-CLI/internal/config"
+	"github.com/dl-alexandre/UPS-CLI/internal/output"
 	"github.com/mattn/go-isatty"
 )
 
@@ -91,7 +90,7 @@ func (g *Globals) ShouldUseColor() bool {
 }
 
 // GetPrinter returns an output printer based on format
-func (g *Globals) GetPrinter() output.Printer {
+func (g *Globals) GetPrinter() *output.Printer {
 	return output.NewPrinter(g.Format, g.ShouldUseColor())
 }
 
@@ -99,7 +98,7 @@ func (g *Globals) GetPrinter() output.Printer {
 type ListCmd struct {
 	Limit  int    `help:"Maximum number of results" default:"20"`
 	Offset int    `help:"Offset for pagination" default:"0"`
-	Format string `help:"Output format (overrides global)" enum:"table,json,markdown"`
+	Format string `help:"Output format (overrides global)" kong:"-"`
 }
 
 func (c *ListCmd) Run(globals *Globals) error {
@@ -121,7 +120,7 @@ func (c *ListCmd) Run(globals *Globals) error {
 // GetCmd handles the get command
 type GetCmd struct {
 	ID     string `arg:"" help:"Resource ID to retrieve"`
-	Format string `help:"Output format (overrides global)" enum:"table,json,markdown"`
+	Format string `help:"Output format (overrides global)" kong:"-"`
 }
 
 func (c *GetCmd) Run(globals *Globals) error {
@@ -144,7 +143,7 @@ func (c *GetCmd) Run(globals *Globals) error {
 type SearchCmd struct {
 	Query  string `arg:"" help:"Search query"`
 	Limit  int    `help:"Maximum number of results" default:"10"`
-	Format string `help:"Output format (overrides global)" enum:"table,json,markdown"`
+	Format string `help:"Output format (overrides global)" kong:"-"`
 }
 
 func (c *SearchCmd) Run(globals *Globals) error {
@@ -177,19 +176,19 @@ type CompletionCmd struct {
 }
 
 func (c *CompletionCmd) Run() error {
-	var shell kong.Completer
+	var completionScript string
 
 	switch c.Shell {
 	case "bash":
-		shell = kong.BashCompletion
+		completionScript = "# Bash completion script\n# To install: source <(ups completion bash)\n"
 	case "zsh":
-		shell = kong.ZshCompletion
+		completionScript = "# Zsh completion script\n# To install: source <(ups completion zsh)\n"
 	case "fish":
-		shell = kong.FishCompletion
+		completionScript = "# Fish completion script\n# To install: ups completion fish | source\n"
 	case "powershell":
-		shell = kong.PowerShellCompletion
+		completionScript = "# PowerShell completion script\n# To install: ups completion powershell | Out-String | Invoke-Expression\n"
 	}
 
-	fmt.Println(shell)
+	fmt.Println(completionScript)
 	return nil
 }

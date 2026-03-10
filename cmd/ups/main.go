@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/alecthomas/kong"
-	"github.com/dl-alexandre/cli-template/internal/cache"
-	"github.com/dl-alexandre/cli-template/internal/cli"
+	"github.com/dl-alexandre/UPS-CLI/internal/cache"
+	"github.com/dl-alexandre/UPS-CLI/internal/cli"
 )
 
 var (

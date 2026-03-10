@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/dl-alexandre/cli-template/internal/api"
+	"github.com/dl-alexandre/UPS-CLI/internal/api"
 	"github.com/rodaine/table"
 )
 

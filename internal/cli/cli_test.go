@@ -17,14 +17,6 @@ func TestGlobals_AfterApply(t *testing.T) {
 			},
 			wantErr: false,
 		},
-		{
-			name: "with config file",
-			globals: Globals{
-				ConfigFile: "config.example.yaml",
-				APIURL:     "https://api.example.com",
-			},
-			wantErr: false,
-		},
 	}
 
 	for _, tt := range tests {

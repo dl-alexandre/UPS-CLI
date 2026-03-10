@@ -6,10 +6,10 @@ var (
 	Version = "dev"
 
 	// BinaryName is the name of the binary
-	BinaryName = "cli-template"
+	BinaryName = "ups"
 
 	// GitHubRepo is the GitHub repository name
-	GitHubRepo = "cli-template"
+	GitHubRepo = "UPS-CLI"
 
 	// GitCommit is the git commit hash
 	GitCommit = "unknown"

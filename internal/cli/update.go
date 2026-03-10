@@ -9,14 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dl-alexandre/cli-template/internal/cache"
-	"github.com/dl-alexandre/cli-template/internal/output"
+	"github.com/dl-alexandre/UPS-CLI/internal/cache"
 )
 
 // UpdateCheckCmd handles checking for available updates
 type UpdateCheckCmd struct {
-	Force  bool   `help:"Force check, bypassing cache" flag:"force"`
-	Format string `help:"Output format" enum:"table,json,markdown" default:"table"`
+	Force bool `help:"Force check, bypassing cache" flag:"force"`
 }
 
 // GitHubRelease represents the release information from GitHub API
@@ -48,8 +46,6 @@ const (
 
 // Run executes the update check
 func (c *UpdateCheckCmd) Run(globals *Globals) error {
-	printer := output.NewPrinter(c.Format, globals.ShouldUseColor())
-
 	// Get current version
 	currentVersion := Version
 	if currentVersion == "" || currentVersion == "dev" {
@@ -59,8 +55,9 @@ func (c *UpdateCheckCmd) Run(globals *Globals) error {
 	// Try to get from cache first
 	if !c.Force && globals.Cache != nil {
 		if cached, ok := globals.Cache.Get(cacheKey); ok {
-			if info, valid := cached.(UpdateInfo); valid {
-				return c.displayUpdateInfo(printer, info)
+			var info UpdateInfo
+			if err := json.Unmarshal(cached, &info); err == nil {
+				return c.displayUpdateInfo(info)
 			}
 		}
 	}
@@ -73,10 +70,12 @@ func (c *UpdateCheckCmd) Run(globals *Globals) error {
 
 	// Cache the result
 	if globals.Cache != nil {
-		globals.Cache.Set(cacheKey, info, cacheTTL)
+		if data, err := json.Marshal(info); err == nil {
+			_ = globals.Cache.Set(cacheKey, data)
+		}
 	}
 
-	return c.displayUpdateInfo(printer, info)
+	return c.displayUpdateInfo(info)
 }
 
 // fetchLatestRelease queries GitHub API for the latest release
@@ -131,7 +130,7 @@ func (c *UpdateCheckCmd) fetchLatestRelease(currentVersion string) (UpdateInfo, 
 }
 
 // displayUpdateInfo shows the update information to the user
-func (c *UpdateCheckCmd) displayUpdateInfo(printer output.Printer, info UpdateInfo) error {
+func (c *UpdateCheckCmd) displayUpdateInfo(info UpdateInfo) error {
 	if info.UpdateAvailable {
 		// Print notification banner
 		fmt.Println()
@@ -165,7 +164,7 @@ func buildGitHubAPIURL() string {
 	// This will be replaced during build with actual values
 	repo := GitHubRepo
 	if repo == "" {
-		repo = "cli-template"
+		repo = "UPS-CLI"
 	}
 	return fmt.Sprintf("https://api.github.com/repos/dl-alexandre/%s/releases/latest", repo)
 }
@@ -240,15 +239,15 @@ func compareVersions(v1, v2 string) int {
 
 // AutoUpdateCheck performs a background update check (for use at startup)
 // It returns immediately and doesn't block
-func AutoUpdateCheck(cache *cache.Cache) {
+func AutoUpdateCheck(c *cache.Cache) {
 	// Skip in CI environments
 	if isCIEnvironment() {
 		return
 	}
 
 	// Check if we've already checked recently
-	if cache != nil {
-		if _, ok := cache.Get(cacheKey); ok {
+	if c != nil {
+		if _, ok := c.Get(cacheKey); ok {
 			return
 		}
 	}
@@ -256,10 +255,6 @@ func AutoUpdateCheck(cache *cache.Cache) {
 	// Perform check in background
 	go func() {
 		cmd := &UpdateCheckCmd{}
-		// Use empty globals with minimal cache
-		globals := &Globals{
-			Cache: cache,
-		}
 
 		info, err := cmd.fetchLatestRelease(Version)
 		if err != nil {
@@ -267,8 +262,10 @@ func AutoUpdateCheck(cache *cache.Cache) {
 		}
 
 		// Cache the result
-		if cache != nil {
-			cache.Set(cacheKey, info, cacheTTL)
+		if c != nil {
+			if data, err := json.Marshal(info); err == nil {
+				_ = c.Set(cacheKey, data)
+			}
 		}
 
 		// Only print if update is available
