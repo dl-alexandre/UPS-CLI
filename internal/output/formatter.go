@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/dl-alexandre/UPS-CLI/internal/api"
@@ -189,12 +190,165 @@ func (p *Printer) printItemMarkdown(item *api.Item) error {
 	return nil
 }
 
-// truncate shortens a string to max length
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
+// PrintTracking prints tracking information in the specified format
+func (p *Printer) PrintTracking(tracking *api.TrackingResponse, format string) error {
+	if format == "" {
+		format = p.format
 	}
-	return s[:maxLen-3] + "..."
+
+	switch format {
+	case "json":
+		return p.printJSON(tracking)
+	case "markdown":
+		return p.printTrackingMarkdown(tracking)
+	case "table":
+		return p.printTrackingTable(tracking)
+	default:
+		return fmt.Errorf("unsupported format: %s", format)
+	}
+}
+
+// printTrackingTable prints tracking info as a formatted table
+func (p *Printer) printTrackingTable(tracking *api.TrackingResponse) error {
+	// Main tracking info
+	tbl := table.New("Property", "Value").WithWriter(os.Stdout)
+
+	if p.useColor {
+		tbl.WithHeaderFormatter(func(format string, vals ...interface{}) string {
+			return fmt.Sprintf("\033[1m%s\033[0m", fmt.Sprintf(format, vals...))
+		})
+	}
+
+	tbl.AddRow("Tracking Number", tracking.TrackingNumber)
+	tbl.AddRow("Status", tracking.StatusDesc)
+	tbl.AddRow("Status Code", tracking.StatusCode)
+	if tracking.ServiceDesc != "" {
+		tbl.AddRow("Service", tracking.ServiceDesc)
+	} else if tracking.Service != "" {
+		tbl.AddRow("Service", tracking.Service)
+	}
+	if tracking.PickupDate != "" {
+		tbl.AddRow("Pickup Date", tracking.PickupDate)
+	}
+	if tracking.ScheduledDate != "" {
+		tbl.AddRow("Scheduled Delivery", tracking.ScheduledDate)
+	}
+	if tracking.ActualDate != "" {
+		tbl.AddRow("Delivered On", tracking.ActualDate)
+	}
+
+	tbl.Print()
+
+	// Current status if different from overall status
+	if tracking.CurrentStatus != nil && tracking.CurrentStatus.Description != tracking.StatusDesc {
+		fmt.Println()
+		fmt.Printf("Current Location: %s\n", tracking.CurrentStatus.Location)
+		fmt.Printf("Last Scan: %s\n", tracking.CurrentStatus.Timestamp)
+	}
+
+	// Shipment events
+	if len(tracking.ShipmentEvents) > 0 {
+		fmt.Println()
+		fmt.Println("Recent Events:")
+		fmt.Println()
+
+		eventTbl := table.New("Date/Time", "Location", "Event").WithWriter(os.Stdout)
+		if p.useColor {
+			eventTbl.WithHeaderFormatter(func(format string, vals ...interface{}) string {
+				return fmt.Sprintf("\033[1m%s\033[0m", fmt.Sprintf(format, vals...))
+			})
+		}
+
+		// Show last 10 events
+		startIdx := 0
+		if len(tracking.ShipmentEvents) > 10 {
+			startIdx = len(tracking.ShipmentEvents) - 10
+		}
+
+		for i := len(tracking.ShipmentEvents) - 1; i >= startIdx; i-- {
+			event := tracking.ShipmentEvents[i]
+			location := event.Location
+			if location == "" && (event.City != "" || event.State != "" || event.Country != "") {
+				location = fmt.Sprintf("%s, %s %s", event.City, event.State, event.Country)
+				location = strings.TrimSpace(strings.TrimSuffix(location, ","))
+			}
+			eventTbl.AddRow(
+				formatTrackingTime(event.Timestamp),
+				location,
+				truncate(event.Description, 50),
+			)
+		}
+
+		eventTbl.Print()
+	}
+
+	return nil
+}
+
+// printTrackingMarkdown prints tracking info as markdown
+func (p *Printer) printTrackingMarkdown(tracking *api.TrackingResponse) error {
+	fmt.Printf("# Tracking: %s\n\n", tracking.TrackingNumber)
+
+	fmt.Printf("**Status:** %s (%s)\n\n", tracking.StatusDesc, tracking.StatusCode)
+
+	if tracking.ServiceDesc != "" {
+		fmt.Printf("**Service:** %s\n\n", tracking.ServiceDesc)
+	}
+
+	if tracking.PickupDate != "" {
+		fmt.Printf("**Pickup Date:** %s\n\n", tracking.PickupDate)
+	}
+
+	if tracking.ScheduledDate != "" {
+		fmt.Printf("**Scheduled Delivery:** %s\n\n", tracking.ScheduledDate)
+	}
+
+	if tracking.ActualDate != "" {
+		fmt.Printf("**Delivered On:** %s\n\n", tracking.ActualDate)
+	}
+
+	if tracking.CurrentStatus != nil {
+		fmt.Printf("**Current Location:** %s\n\n", tracking.CurrentStatus.Location)
+		fmt.Printf("**Last Scan:** %s\n\n", tracking.CurrentStatus.Timestamp)
+	}
+
+	if len(tracking.ShipmentEvents) > 0 {
+		fmt.Println("## Shipment Events")
+		fmt.Println()
+
+		for _, event := range tracking.ShipmentEvents {
+			fmt.Printf("### %s\n\n", formatTrackingTime(event.Timestamp))
+			fmt.Printf("- **Event:** %s\n", event.Description)
+			if event.Location != "" {
+				fmt.Printf("- **Location:** %s\n", event.Location)
+			} else if event.City != "" || event.State != "" || event.Country != "" {
+				fmt.Printf("- **Location:** %s, %s %s\n", event.City, event.State, event.Country)
+			}
+			fmt.Println()
+		}
+	}
+
+	return nil
+}
+
+// formatTrackingTime formats a tracking timestamp
+func formatTrackingTime(timestamp string) string {
+	// Try to parse various time formats
+	formats := []string{
+		time.RFC3339,
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05",
+		"01/02/2006 15:04",
+	}
+
+	for _, format := range formats {
+		if t, err := time.Parse(format, timestamp); err == nil {
+			return t.Format("2006-01-02 15:04")
+		}
+	}
+
+	// Return original if parsing fails
+	return timestamp
 }
 
 // formatTime formats a time for display
@@ -215,4 +369,12 @@ func ValidateFormat(format string, allowed []string) error {
 // ParseBool parses a boolean string
 func ParseBool(s string) (bool, error) {
 	return strconv.ParseBool(s)
+}
+
+// truncate shortens a string to max length
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
 }

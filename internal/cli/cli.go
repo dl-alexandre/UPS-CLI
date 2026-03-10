@@ -22,6 +22,7 @@ type CLI struct {
 	Version     VersionCmd     `cmd:"" help:"Show version information"`
 	CheckUpdate UpdateCheckCmd `cmd:"" help:"Check for available updates"`
 	Completion  CompletionCmd  `cmd:"" help:"Generate shell completion script"`
+	Track       TrackCmd       `cmd:"" help:"Track a UPS shipment"`
 }
 
 // Globals contains global flags available to all commands

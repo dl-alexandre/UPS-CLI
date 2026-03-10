@@ -14,6 +14,7 @@ import (
 type Config struct {
 	API   APIConfig   `mapstructure:"api"`
 	Cache CacheConfig `mapstructure:"cache"`
+	UPS   UPSConfig   `mapstructure:"ups"`
 }
 
 // APIConfig holds API-related configuration
@@ -28,6 +29,14 @@ type CacheConfig struct {
 	Enabled bool          `mapstructure:"enabled"`
 	Dir     string        `mapstructure:"dir"`
 	TTL     time.Duration `mapstructure:"ttl"`
+}
+
+// UPSConfig holds UPS-specific OAuth and API configuration
+type UPSConfig struct {
+	ClientID     string `mapstructure:"client_id"`
+	ClientSecret string `mapstructure:"client_secret"`
+	Env          string `mapstructure:"env"`
+	BaseURL      string `mapstructure:"base_url"`
 }
 
 // Flags holds command-line flag values
@@ -50,6 +59,10 @@ const (
 	DefaultCacheTTL   = 60 * time.Minute
 	DefaultConfigName = "config"
 	DefaultConfigType = "yaml"
+
+	// UPS defaults
+	UPSProductionURL = "https://onlinetools.ups.com"
+	UPSSandboxURL    = "https://wwwcie.ups.com"
 )
 
 // Load loads configuration from file and environment variables
@@ -61,6 +74,7 @@ func Load(flags Flags) (*Config, error) {
 	v.SetDefault("api.timeout", DefaultTimeout)
 	v.SetDefault("cache.enabled", true)
 	v.SetDefault("cache.ttl", DefaultCacheTTL)
+	v.SetDefault("ups.env", "production")
 
 	// Set config file if provided
 	if flags.ConfigFile != "" {
@@ -113,6 +127,15 @@ func Load(flags Flags) (*Config, error) {
 		cfg.Cache.Dir = filepath.Join(getConfigDir(), "cache")
 	}
 
+	// Resolve UPS base URL based on environment
+	if cfg.UPS.BaseURL == "" {
+		if cfg.UPS.Env == "sandbox" {
+			cfg.UPS.BaseURL = UPSSandboxURL
+		} else {
+			cfg.UPS.BaseURL = UPSProductionURL
+		}
+	}
+
 	// Ensure cache directory exists if caching is enabled
 	if cfg.Cache.Enabled {
 		if err := os.MkdirAll(cfg.Cache.Dir, 0755); err != nil {
@@ -146,6 +169,7 @@ func Save(cfg *Config) error {
 	// Set values
 	v.Set("api", cfg.API)
 	v.Set("cache", cfg.Cache)
+	v.Set("ups", cfg.UPS)
 
 	// Ensure config directory exists
 	configDir := getConfigDir()
@@ -177,4 +201,9 @@ func (c *Config) GetCacheDir() string {
 // GetCacheTTL returns the cache TTL
 func (c *Config) GetCacheTTL() time.Duration {
 	return c.Cache.TTL
+}
+
+// UPSConfig returns the UPS configuration
+func (c *Config) UPSF() UPSConfig {
+	return c.UPS
 }

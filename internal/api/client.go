@@ -20,10 +20,149 @@ type ClientOptions struct {
 
 // Client is the API client for making HTTP requests
 type Client struct {
-	client  *resty.Client
-	verbose bool
-	debug   bool
+	client        *resty.Client
+	tokenProvider *TokenProvider
+	verbose       bool
+	debug         bool
 }
+
+// NewClient creates a new API client
+func NewClient(opts ClientOptions) *Client {
+	client := resty.New()
+	client.SetBaseURL(opts.BaseURL)
+	client.SetTimeout(time.Duration(opts.Timeout) * time.Second)
+	client.SetHeader("Accept", "application/json")
+	client.SetHeader("User-Agent", "ups-cli/1.0.0")
+	client.SetContentLength(true)
+
+	if opts.Debug {
+		client.SetDebug(true)
+	}
+
+	return &Client{
+		client:  client,
+		verbose: opts.Verbose,
+		debug:   opts.Debug,
+	}
+}
+
+// SetTokenProvider sets the OAuth token provider for authentication
+func (c *Client) SetTokenProvider(provider *TokenProvider) {
+	c.tokenProvider = provider
+}
+
+// doRequest executes an authenticated HTTP request
+func (c *Client) doRequest(ctx context.Context, method, url string, body interface{}) (*resty.Response, error) {
+	// Get OAuth token if token provider is configured
+	if c.tokenProvider != nil {
+		token, err := c.tokenProvider.GetToken(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("authentication failed: %w", err)
+		}
+		c.client.SetAuthToken(token)
+	}
+
+	req := c.client.R().SetContext(ctx)
+	if body != nil {
+		req.SetBody(body)
+	}
+
+	return req.Execute(method, url)
+}
+
+// Tracking types
+
+// TrackingRequest represents a UPS tracking request
+type TrackingRequest struct {
+	TrackingNumber string `json:"trackingNumber"`
+}
+
+// TrackingResponse represents the UPS tracking response
+type TrackingResponse struct {
+	TrackingNumber string          `json:"trackingNumber"`
+	StatusCode     string          `json:"statusCode"`
+	StatusDesc     string          `json:"statusDescription"`
+	Service        string          `json:"serviceCode"`
+	ServiceDesc    string          `json:"serviceDescription,omitempty"`
+	PickupDate     string          `json:"pickupDate,omitempty"`
+	ScheduledDate  string          `json:"scheduledDeliveryDate,omitempty"`
+	ActualDate     string          `json:"actualDeliveryDate,omitempty"`
+	CurrentStatus  *TrackingStatus `json:"currentStatus,omitempty"`
+	PackageCount   int             `json:"packageCount,omitempty"`
+	ShipmentEvents []ShipmentEvent `json:"shipmentEvents,omitempty"`
+	Error          *TrackingError  `json:"error,omitempty"`
+}
+
+// TrackingStatus represents the current tracking status
+type TrackingStatus struct {
+	Code        string `json:"code"`
+	Description string `json:"description"`
+	Location    string `json:"location,omitempty"`
+	Timestamp   string `json:"timestamp,omitempty"`
+}
+
+// ShipmentEvent represents a single tracking event
+type ShipmentEvent struct {
+	Timestamp   string `json:"timestamp"`
+	Code        string `json:"code,omitempty"`
+	Description string `json:"description"`
+	Location    string `json:"location,omitempty"`
+	City        string `json:"city,omitempty"`
+	State       string `json:"state,omitempty"`
+	Country     string `json:"country,omitempty"`
+}
+
+// TrackingError represents a UPS API error
+type TrackingError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// Track tracks a UPS shipment by tracking number
+func (c *Client) Track(ctx context.Context, trackingNumber string) (*TrackingResponse, error) {
+	endpoint := fmt.Sprintf("/api/track/v1/details/%s", trackingNumber)
+
+	resp, err := c.doRequest(ctx, "GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode() != http.StatusOK {
+		return nil, c.handleError(resp)
+	}
+
+	var result TrackingResponse
+	if err := json.Unmarshal(resp.Body(), &result); err != nil {
+		return nil, fmt.Errorf("failed to decode tracking response: %w", err)
+	}
+
+	if result.Error != nil {
+		return nil, &APIError{
+			StatusCode: resp.StatusCode(),
+			Message:    fmt.Sprintf("%s: %s", result.Error.Code, result.Error.Message),
+		}
+	}
+
+	return &result, nil
+}
+
+// TrackRaw returns the raw tracking response body (for debugging)
+func (c *Client) TrackRaw(ctx context.Context, trackingNumber string) ([]byte, error) {
+	endpoint := fmt.Sprintf("/api/track/v1/details/%s", trackingNumber)
+
+	resp, err := c.doRequest(ctx, "GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode() != http.StatusOK {
+		return nil, c.handleError(resp)
+	}
+
+	return resp.Body(), nil
+}
+
+// Legacy example methods (kept for compatibility)
 
 // Item represents a generic API resource
 type Item struct {
@@ -49,25 +188,6 @@ type ListResponse struct {
 	Offset     int    `json:"offset"`
 	HasMore    bool   `json:"has_more"`
 	NextOffset int    `json:"next_offset,omitempty"`
-}
-
-// NewClient creates a new API client
-func NewClient(opts ClientOptions) *Client {
-	client := resty.New()
-	client.SetBaseURL(opts.BaseURL)
-	client.SetTimeout(time.Duration(opts.Timeout) * time.Second)
-	client.SetHeader("Accept", "application/json")
-	client.SetHeader("User-Agent", "ups/1.0.0")
-
-	if opts.Debug {
-		client.SetDebug(true)
-	}
-
-	return &Client{
-		client:  client,
-		verbose: opts.Verbose,
-		debug:   opts.Debug,
-	}
 }
 
 // List retrieves a paginated list of items
@@ -179,5 +299,5 @@ type ValidationError struct {
 }
 
 func (e *ValidationError) Error() string {
-	return fmt.Sprintf("validation error for %s: %s", e.Field, e.Message)
+	return fmt.Errorf("validation error for %s: %s", e.Field, e.Message).Error()
 }

@@ -1,16 +1,31 @@
-# Example configuration file for ups
+# Example configuration file for ups CLI
 # Copy this file to ~/.config/ups/config.yaml and customize
 
-api:
-  # Base URL for the API
-  url: "https://api.example.com"
+# UPS API Configuration
+ups:
+  # Your UPS API Client ID (from UPS Developer Portal)
+  # Can also be set via UPS_CLIENT_ID environment variable
+  # client_id: "your-client-id"
   
+  # Your UPS API Client Secret (from UPS Developer Portal)
+  # Can also be set via UPS_CLIENT_SECRET environment variable  
+  # client_secret: "your-client-secret"
+  
+  # Environment: "production" or "sandbox"
+  # Can also be set via UPS_ENV environment variable
+  env: "production"
+  
+  # Optional: Override the base URL
+  # Production: https://onlinetools.ups.com
+  # Sandbox: https://wwwcie.ups.com
+  # base_url: "https://onlinetools.ups.com"
+
+# General API Settings
+api:
   # Request timeout in seconds
   timeout: 30
-  
-  # API key (if required)
-  # key: "your-api-key-here"
 
+# Cache Settings  
 cache:
   # Enable/disable caching
   enabled: true
