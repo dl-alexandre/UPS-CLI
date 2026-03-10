@@ -144,7 +144,7 @@ func (c *Client) Track(ctx context.Context, trackingNumber string, locale string
 	}
 
 	if resp.StatusCode() != http.StatusOK {
-		return nil, c.handleError(resp)
+		return nil, ParseUPSError(resp)
 	}
 
 	var result TrackingResponse
@@ -152,10 +152,12 @@ func (c *Client) Track(ctx context.Context, trackingNumber string, locale string
 		return nil, fmt.Errorf("failed to decode tracking response: %w", err)
 	}
 
+	// Check for tracking-specific error structure
 	if result.Error != nil {
-		return nil, &APIError{
+		return nil, &UPSError{
 			StatusCode: resp.StatusCode(),
-			Message:    fmt.Sprintf("%s: %s", result.Error.Code, result.Error.Message),
+			Code:       result.Error.Code,
+			Message:    result.Error.Message,
 		}
 	}
 
@@ -178,7 +180,7 @@ func (c *Client) TrackRaw(ctx context.Context, trackingNumber string, locale str
 	}
 
 	if resp.StatusCode() != http.StatusOK {
-		return nil, c.handleError(resp)
+		return nil, ParseUPSError(resp)
 	}
 
 	return resp.Body(), nil

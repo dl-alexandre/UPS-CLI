@@ -378,3 +378,86 @@ func truncate(s string, maxLen int) string {
 	}
 	return s[:maxLen-3] + "..."
 }
+
+// PrintRate prints rate information in the specified format
+func (p *Printer) PrintRate(rate *api.RateResponse, format string) error {
+	if format == "" {
+		format = p.format
+	}
+
+	switch format {
+	case "json":
+		return p.printJSON(rate)
+	case "markdown":
+		return p.printRateMarkdown(rate)
+	case "table":
+		return p.printRateTable(rate)
+	default:
+		return fmt.Errorf("unsupported format: %s", format)
+	}
+}
+
+// printRateTable prints rate info as a formatted table
+func (p *Printer) printRateTable(rate *api.RateResponse) error {
+	if len(rate.RateResponse.RatedShipment) == 0 {
+		fmt.Println("No rates available for this shipment.")
+		return nil
+	}
+
+	tbl := table.New("Service", "Days", "Total", "Currency").WithWriter(os.Stdout)
+
+	if p.useColor {
+		tbl.WithHeaderFormatter(func(format string, vals ...interface{}) string {
+			return fmt.Sprintf("\033[1m%s\033[0m", fmt.Sprintf(format, vals...))
+		})
+	}
+
+	for _, shipment := range rate.RateResponse.RatedShipment {
+		days := ""
+		if shipment.GuaranteedDelivery != nil {
+			days = shipment.GuaranteedDelivery.BusinessDaysInTransit
+		}
+
+		tbl.AddRow(
+			shipment.Service.Description,
+			days,
+			shipment.TotalCharges.MonetaryValue,
+			shipment.TotalCharges.CurrencyCode,
+		)
+	}
+
+	tbl.Print()
+	fmt.Printf("\nShowing %d service options\n", len(rate.RateResponse.RatedShipment))
+
+	return nil
+}
+
+// printRateMarkdown prints rate info as markdown
+func (p *Printer) printRateMarkdown(rate *api.RateResponse) error {
+	if len(rate.RateResponse.RatedShipment) == 0 {
+		fmt.Println("No rates available for this shipment.")
+		return nil
+	}
+
+	fmt.Println("# Shipping Rates")
+	fmt.Println()
+
+	for _, shipment := range rate.RateResponse.RatedShipment {
+		fmt.Printf("## %s\n\n", shipment.Service.Description)
+		fmt.Printf("- **Service Code:** %s\n", shipment.Service.Code)
+		fmt.Printf("- **Total:** %s %s\n", shipment.TotalCharges.MonetaryValue, shipment.TotalCharges.CurrencyCode)
+
+		if shipment.GuaranteedDelivery != nil {
+			if shipment.GuaranteedDelivery.BusinessDaysInTransit != "" {
+				fmt.Printf("- **Transit Time:** %s business days\n", shipment.GuaranteedDelivery.BusinessDaysInTransit)
+			}
+			if shipment.GuaranteedDelivery.DeliveryBy != "" {
+				fmt.Printf("- **Delivery By:** %s\n", shipment.GuaranteedDelivery.DeliveryBy)
+			}
+		}
+
+		fmt.Println()
+	}
+
+	return nil
+}
