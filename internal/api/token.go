@@ -20,6 +20,7 @@ import (
 type TokenProvider struct {
 	clientID     string
 	clientSecret string
+	env          string
 	tokenURL     string
 	httpClient   *http.Client
 	cacheDir     string
@@ -47,12 +48,13 @@ type TokenCache struct {
 }
 
 // NewTokenProvider creates a new OAuth token provider
-func NewTokenProvider(clientID, clientSecret, baseURL, cacheDir string) *TokenProvider {
+func NewTokenProvider(clientID, clientSecret, env, baseURL, cacheDir string) *TokenProvider {
 	tokenURL := baseURL + "/security/v1/oauth/token"
 
 	return &TokenProvider{
 		clientID:     clientID,
 		clientSecret: clientSecret,
+		env:          env,
 		tokenURL:     tokenURL,
 		httpClient:   &http.Client{Timeout: 30 * time.Second},
 		cacheDir:     cacheDir,
@@ -66,13 +68,13 @@ func (tp *TokenProvider) GetToken(ctx context.Context) (string, error) {
 	defer func() { <-tp.mutex }() // Unlock
 
 	// Check in-memory cache first
-	if tp.cachedToken != "" && time.Now().Before(tp.tokenExpiry.Add(-30*time.Second)) {
+	if tp.cachedToken != "" && time.Now().Before(tp.tokenExpiry.Add(-60*time.Second)) {
 		return tp.cachedToken, nil
 	}
 
 	// Try to load from disk cache
 	token, expiry, err := tp.loadTokenFromDisk()
-	if err == nil && token != "" && time.Now().Before(expiry.Add(-30*time.Second)) {
+	if err == nil && token != "" && time.Now().Before(expiry.Add(-60*time.Second)) {
 		tp.cachedToken = token
 		tp.tokenExpiry = expiry
 		return token, nil
@@ -142,9 +144,9 @@ func (tp *TokenProvider) fetchToken(ctx context.Context) (string, time.Time, err
 	return tokenResp.AccessToken, expiry, nil
 }
 
-// cacheKey generates a cache key based on client_id and token URL
+// cacheKey generates a cache key based on client_id, env, and token URL
 func (tp *TokenProvider) cacheKey() string {
-	data := tp.clientID + ":" + tp.tokenURL
+	data := tp.clientID + ":" + tp.env + ":" + tp.tokenURL
 	hash := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(hash[:16]) // Use first 16 bytes (32 hex chars)
 }

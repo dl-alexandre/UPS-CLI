@@ -47,9 +47,16 @@ func (c *TrackCmd) Run(globals *Globals) error {
 	tokenProvider := api.NewTokenProvider(
 		upsConfig.ClientID,
 		upsConfig.ClientSecret,
+		upsConfig.Env,
 		upsConfig.BaseURL,
 		globals.Config.GetCacheDir(), // Enable disk caching
 	)
+
+	// Log environment in verbose mode
+	if globals.Verbose {
+		fmt.Fprintf(os.Stderr, "Environment: %s\n", upsConfig.Env)
+		fmt.Fprintf(os.Stderr, "Base URL: %s\n", upsConfig.BaseURL)
+	}
 
 	// Create API client
 	client := api.NewClient(api.ClientOptions{
