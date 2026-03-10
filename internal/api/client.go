@@ -51,33 +51,45 @@ func (c *Client) SetTokenProvider(provider *TokenProvider) {
 	c.tokenProvider = provider
 }
 
-// doRequest executes an authenticated HTTP request
+// doRequest executes an authenticated HTTP request with retry logic
 func (c *Client) doRequest(ctx context.Context, method, url string, body interface{}) (*resty.Response, error) {
-	// Get OAuth token if token provider is configured
-	if c.tokenProvider != nil {
-		token, err := c.tokenProvider.GetToken(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("authentication failed: %w", err)
-		}
-		c.client.SetAuthToken(token)
-	}
-
-	req := c.client.R().SetContext(ctx)
-
-	// Add UPS transaction headers for support/debugging
-	req.SetHeader("transId", generateTransactionID())
-	req.SetHeader("transactionSrc", "ups-cli")
-
-	if body != nil {
-		req.SetBody(body)
-	}
-
-	return req.Execute(method, url)
+	return c.doRequestWithRetry(ctx, method, url, body, DefaultRetryConfig())
 }
 
-// generateTransactionID creates a simple transaction ID
-func generateTransactionID() string {
-	return fmt.Sprintf("upscli-%d", time.Now().UnixNano())
+// doRequestWithRetry executes a request with configurable retry logic
+func (c *Client) doRequestWithRetry(ctx context.Context, method, url string, body interface{}, retryCfg RetryConfig) (*resty.Response, error) {
+	buildRequest := func() *resty.Request {
+		req := c.client.R()
+
+		// Set method and URL
+		req.Method = method
+		req.URL = url
+
+		// Get fresh OAuth token for each attempt
+		if c.tokenProvider != nil {
+			token, err := c.tokenProvider.GetToken(ctx)
+			if err != nil {
+				// Token errors are fatal, not retryable
+				req.SetError(fmt.Errorf("authentication failed: %w", err))
+				return req
+			}
+			req.SetAuthToken(token)
+		}
+
+		// Set body if provided
+		if body != nil {
+			req.SetBody(body)
+		}
+
+		return req
+	}
+
+	resp, err := DoWithRetry(ctx, buildRequest, retryCfg)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
 }
 
 // Tracking types

@@ -79,7 +79,7 @@ func (c *RateCmd) Run(globals *Globals) error {
 	}
 
 	// Build rate request
-	req := api.NewRateRequest(
+	req, err := api.NewRateRequest(
 		c.FromPostal,
 		c.ToPostal,
 		c.Shipper,
@@ -89,6 +89,9 @@ func (c *RateCmd) Run(globals *Globals) error {
 		c.WeightUnit,
 		c.Service,
 	)
+	if err != nil {
+		return fmt.Errorf("failed to build rate request: %w", err)
+	}
 
 	// Execute rate request
 	ctx := context.Background()

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 )
 
 // RateRequest represents a minimal UPS rate request
@@ -183,7 +185,18 @@ func (c *Client) RateRaw(ctx context.Context, req *RateRequest, locale string) (
 }
 
 // NewRateRequest creates a minimal rate request with the required fields
-func NewRateRequest(fromPostal, toPostal, shipperPostal, countryFrom, countryTo, weight, weightUnit, serviceCode string) *RateRequest {
+func NewRateRequest(fromPostal, toPostal, shipperPostal, countryFrom, countryTo, weightStr, weightUnit, serviceCode string) (*RateRequest, error) {
+	// Validate and format weight
+	weightFloat, err := strconv.ParseFloat(weightStr, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid weight: %w", err)
+	}
+	if weightFloat <= 0 {
+		return nil, fmt.Errorf("weight must be greater than 0")
+	}
+	// Format with 2 decimal places, no scientific notation
+	weight := fmt.Sprintf("%.2f", weightFloat)
+
 	// Set defaults
 	if shipperPostal == "" {
 		shipperPostal = fromPostal
@@ -197,6 +210,9 @@ func NewRateRequest(fromPostal, toPostal, shipperPostal, countryFrom, countryTo,
 	if weightUnit == "" {
 		weightUnit = "LBS"
 	}
+
+	// Normalize weight unit to uppercase
+	weightUnit = strings.ToUpper(weightUnit)
 
 	req := &RateRequest{
 		RateRequest: &RateRequestDetail{
@@ -248,5 +264,5 @@ func NewRateRequest(fromPostal, toPostal, shipperPostal, countryFrom, countryTo,
 		}
 	}
 
-	return req
+	return req, nil
 }
