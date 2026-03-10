@@ -24,6 +24,7 @@ type CLI struct {
 	Completion  CompletionCmd  `cmd:"" help:"Generate shell completion script"`
 	Track       TrackCmd       `cmd:"" help:"Track a UPS shipment"`
 	Rate        RateCmd        `cmd:"" help:"Get shipping rates"`
+	Ship        ShipCmd        `cmd:"" help:"Create or validate shipments"`
 }
 
 // Globals contains global flags available to all commands

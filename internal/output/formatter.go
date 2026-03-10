@@ -461,3 +461,108 @@ func (p *Printer) printRateMarkdown(rate *api.RateResponse) error {
 
 	return nil
 }
+
+// PrintShipmentValidation prints shipment validation results
+func (p *Printer) PrintShipmentValidation(shipment *api.ShipmentResponse, format string) error {
+	if format == "" {
+		format = p.format
+	}
+
+	switch format {
+	case "json":
+		return p.printJSON(shipment)
+	case "markdown":
+		return p.printShipmentValidationMarkdown(shipment)
+	case "table":
+		return p.printShipmentValidationTable(shipment)
+	default:
+		return fmt.Errorf("unsupported format: %s", format)
+	}
+}
+
+// printShipmentValidationTable prints validation results as a table
+func (p *Printer) printShipmentValidationTable(shipment *api.ShipmentResponse) error {
+	response := shipment.ShipmentResponse.Response
+
+	// Print status
+	fmt.Printf("Validation Status: %s - %s\n",
+		response.ResponseStatus.Code,
+		response.ResponseStatus.Description)
+
+	// Print any alerts
+	if len(response.Alert) > 0 {
+		fmt.Println("\nAlerts:")
+		for _, alert := range response.Alert {
+			fmt.Printf("  - [%s] %s\n", alert.Code, alert.Description)
+		}
+	}
+
+	// Print shipment results if available
+	if results := shipment.ShipmentResponse.ShipmentResults; results != nil {
+		fmt.Println("\nEstimated Charges:")
+
+		if results.ShipmentCharges != nil {
+			fmt.Printf("  Transportation: %s %s\n",
+				results.ShipmentCharges.TransportationCharges.MonetaryValue,
+				results.ShipmentCharges.TransportationCharges.CurrencyCode)
+			fmt.Printf("  Total: %s %s\n",
+				results.ShipmentCharges.TotalCharges.MonetaryValue,
+				results.ShipmentCharges.TotalCharges.CurrencyCode)
+		}
+
+		if results.NegotiatedRateCharges != nil {
+			fmt.Printf("  Negotiated Rate: %s %s\n",
+				results.NegotiatedRateCharges.TotalCharge.MonetaryValue,
+				results.NegotiatedRateCharges.TotalCharge.CurrencyCode)
+		}
+	}
+
+	return nil
+}
+
+// printShipmentValidationMarkdown prints validation results as markdown
+func (p *Printer) printShipmentValidationMarkdown(shipment *api.ShipmentResponse) error {
+	response := shipment.ShipmentResponse.Response
+
+	fmt.Println("# Shipment Validation")
+	fmt.Println()
+
+	fmt.Printf("**Status:** %s - %s\n\n",
+		response.ResponseStatus.Code,
+		response.ResponseStatus.Description)
+
+	// Print alerts
+	if len(response.Alert) > 0 {
+		fmt.Println("## Alerts")
+		fmt.Println()
+		for _, alert := range response.Alert {
+			fmt.Printf("- **%s:** %s\n", alert.Code, alert.Description)
+		}
+		fmt.Println()
+	}
+
+	// Print shipment results
+	if results := shipment.ShipmentResponse.ShipmentResults; results != nil {
+		fmt.Println("## Estimated Charges")
+		fmt.Println()
+
+		if results.ShipmentCharges != nil {
+			fmt.Printf("- **Transportation:** %s %s\n",
+				results.ShipmentCharges.TransportationCharges.MonetaryValue,
+				results.ShipmentCharges.TransportationCharges.CurrencyCode)
+			fmt.Printf("- **Total:** %s %s\n",
+				results.ShipmentCharges.TotalCharges.MonetaryValue,
+				results.ShipmentCharges.TotalCharges.CurrencyCode)
+		}
+
+		if results.NegotiatedRateCharges != nil {
+			fmt.Printf("- **Negotiated Rate:** %s %s\n",
+				results.NegotiatedRateCharges.TotalCharge.MonetaryValue,
+				results.NegotiatedRateCharges.TotalCharge.CurrencyCode)
+		}
+
+		fmt.Println()
+	}
+
+	return nil
+}
