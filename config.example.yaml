@@ -1,0 +1,22 @@
+# Example configuration file for ups
+# Copy this file to ~/.config/ups/config.yaml and customize
+
+api:
+  # Base URL for the API
+  url: "https://api.example.com"
+  
+  # Request timeout in seconds
+  timeout: 30
+  
+  # API key (if required)
+  # key: "your-api-key-here"
+
+cache:
+  # Enable/disable caching
+  enabled: true
+  
+  # Cache directory (defaults to ~/.config/ups/cache)
+  # dir: "/path/to/custom/cache"
+  
+  # Cache TTL (in minutes)
+  ttl: 60

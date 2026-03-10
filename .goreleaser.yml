@@ -1,0 +1,180 @@
+# GoReleaser configuration
+# Documentation: https://goreleaser.com
+
+version: 2
+
+project_name: ups
+
+before:
+  hooks:
+    # Tidy and verify dependencies
+    - go mod tidy
+    - go mod verify
+    # Run tests to ensure quality before release
+    - go test ./...
+
+builds:
+  - id: ups
+    main: ./cmd/ups
+    binary: ups
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    goarm:
+      - "7"
+    ignore:
+      # Skip 32-bit builds
+      - goos: windows
+        goarch: arm
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.gitCommit={{.Commit}}
+      - -X main.buildTime={{.Date}}
+    flags:
+      - -trimpath
+
+archives:
+  - id: ups
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+      - completions/*
+    wrap_in_directory: true
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: "^.*feat[/(].*"
+      order: 0
+    - title: Bug Fixes
+      regexp: "^.*fix[/(].*"
+      order: 1
+    - title: Improvements
+      regexp: "^.*improve[/(].*"
+      order: 2
+    - title: Documentation
+      regexp: "^.*docs[/(].*"
+      order: 3
+    - title: Other
+      order: 999
+
+release:
+  github:
+    owner: dl-alexandre
+    name: UPS-CLI
+  draft: false
+  prerelease: auto
+  name_template: "v{{.Version}}"
+  header: |
+    ## ups v{{.Version}}
+    
+    Full Changelog: https://github.com/dl-alexandre/UPS-CLI/compare/{{.PreviousTag}}...v{{.Version}}
+  footer: |
+    ## Installation
+    
+    ### macOS/Linux (Homebrew)
+    ```bash
+    brew tap dl-alexandre/ups
+    brew install ups
+    ```
+    
+    ### Binary Download
+    Download the appropriate binary for your platform from the assets below.
+    
+    ### Verification
+    Verify checksums:
+    ```bash
+    sha256sum -c checksums.txt
+    ```
+
+# Homebrew tap configuration (uncomment and customize)
+# brews:
+#   - name: ups
+#     repository:
+#       owner: dl-alexandre
+#       name: homebrew-tap
+#       token: "{{ .Env.GITHUB_TOKEN }}"
+#     commit_author:
+#       name: goreleaserbot
+#       email: goreleaser@carlosbecker.com
+#     commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
+#     directory: Formula
+#     description: "CLI for UPS APIs (Tracking, Rating, Shipping)"
+#     homepage: "https://github.com/dl-alexandre/UPS-CLI"
+#     license: "MIT"
+#     test: |
+#       system "#{bin}/ups", "version"
+#     install: |
+#       bin.install "ups"
+
+# Scoop configuration for Windows (uncomment and customize)
+# scoops:
+#   - repository:
+#       owner: dl-alexandre
+#       name: scoop-bucket
+#       token: "{{ .Env.GITHUB_TOKEN }}"
+#     commit_author:
+#       name: goreleaserbot
+#       email: goreleaser@carlosbecker.com
+#     commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
+#     description: "CLI for UPS APIs (Tracking, Rating, Shipping)"
+#     homepage: "https://github.com/dl-alexandre/UPS-CLI"
+#     license: MIT
+#     persist:
+#       - "config.yaml"
+
+# Docker configuration (optional - uncomment when ready)
+# dockers:
+#   - image_templates:
+#       - "ghcr.io/dl-alexandre/ups:{{ .Tag }}"
+#       - "ghcr.io/dl-alexandre/ups:v{{ .Major }}"
+#       - "ghcr.io/dl-alexandre/ups:v{{ .Major }}.{{ .Minor }}"
+#       - "ghcr.io/dl-alexandre/ups:latest"
+#     dockerfile: Dockerfile
+#     build_flag_templates:
+#       - "--pull"
+#       - "--label=org.opencontainers.image.created={{.Date}}"
+#       - "--label=org.opencontainers.image.title={{.ProjectName}}"
+#       - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+#       - "--label=org.opencontainers.image.version={{.Version}}"
+
+# Goreleaser Pro features (optional)
+# announce:
+#   twitter:
+#     enabled: true
+#     message_template: "ups {{.Tag}} is out! Check it out: https://github.com/dl-alexandre/UPS-CLI/releases/{{.Tag}}"

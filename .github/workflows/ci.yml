@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  validate-template:
+    name: Validate Template Structure
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v6
+    
+    - name: Check required files exist
+      run: |
+        echo "Checking template structure..."
+        test -f "cmd/ups/main.go" || echo "⚠️  cmd/ups/main.go (will be renamed by setup.sh)"
+        test -f go.mod || (echo "❌ go.mod missing" && exit 1)
+        test -f Makefile || (echo "❌ Makefile missing" && exit 1)
+        test -f README.md || (echo "❌ README.md missing" && exit 1)
+        test -f .golangci.yml || (echo "❌ .golangci.yml missing" && exit 1)
+        test -f scripts/setup.sh || (echo "❌ scripts/setup.sh missing" && exit 1)
+        echo "✅ All required template files present"
+    
+    - name: Validate module path
+      run: |
+        echo "Checking module path..."
+        # Check for valid module path (either template placeholders or actual GitHub path)
+        if grep -q "github.com/dl-alexandre/ups" go.mod; then
+          echo "✅ Template placeholders found (template repo mode)"
+        elif grep -q "github.com/dl-alexandre/cli-template" go.mod; then
+          echo "✅ Actual module path found (production mode)"
+        else
+          echo "❌ Invalid module path in go.mod"
+          exit 1
+        fi
+        
+        # Check README has proper references
+        if grep -q "dl-alexandre/cli-template" README.md || grep -q "dl-alexandre/ups" README.md; then
+          echo "✅ README has proper references"
+        else
+          echo "❌ README missing expected references"
+          exit 1
+        fi
+    
+    - name: Check files have content
+      run: |
+        echo "Checking file contents..."
+        test -s go.mod || (echo "❌ go.mod is empty" && exit 1)
+        test -s "cmd/ups/main.go" || (echo "❌ main.go is empty" && exit 1)
+        test -s internal/cli/cli.go || (echo "❌ cli.go is empty" && exit 1)
+        echo "✅ All required files have content"
+    
+    - name: Check scripts are executable
+      run: |
+        echo "Checking script permissions..."
+        test -x scripts/setup.sh || (echo "❌ setup.sh should be executable" && exit 1)
+        test -x .githooks/pre-commit || (echo "❌ pre-commit hook should be executable" && exit 1)
+        echo "✅ Scripts are executable"
+
+  cross-platform:
+    name: Cross-Platform Validation
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v6
+    
+    - name: Check template files (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        Write-Host "Checking template structure on Windows..."
+        if (!(Test-Path "go.mod")) { throw "❌ go.mod missing" }
+        if (!(Test-Path "Makefile")) { throw "❌ Makefile missing" }
+        if (!(Test-Path "README.md")) { throw "❌ README.md missing" }
+        Write-Host "✅ All required template files present"
+    
+    - name: Check template files (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        echo "Checking template structure on ${{ runner.os }}..."
+        test -f go.mod || (echo "❌ go.mod missing" && exit 1)
+        test -f Makefile || (echo "❌ Makefile missing" && exit 1)
+        test -f README.md || (echo "❌ README.md missing" && exit 1)
+        echo "✅ All required template files present on ${{ runner.os }}"

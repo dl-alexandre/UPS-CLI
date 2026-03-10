@@ -1,0 +1,43 @@
+# Binaries for programs and plugins
+bin/
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+# Binary name after setup (not the template dir)
+/ups
+
+# Test files
+*.test
+*.out
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Dependencies
+vendor/
+
+# Environment files
+.env
+.env.local
+
+# Config (but keep example)
+config.yaml
+!config.example.yaml
+
+# Cache (runtime cache dir, not internal/cache package)
+/cache/
+!internal/cache/
+
+# GoReleaser
+dist/
+
+# OS files
+Thumbs.db
