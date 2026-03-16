@@ -142,21 +142,26 @@ release:
 #     install: |
 #       bin.install "ups"
 
-# Scoop configuration for Windows (uncomment and customize)
-# scoops:
-#   - repository:
-#       owner: dl-alexandre
-#       name: scoop-bucket
-#       token: "{{ .Env.GITHUB_TOKEN }}"
-#     commit_author:
-#       name: goreleaserbot
-#       email: goreleaser@carlosbecker.com
-#     commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
-#     description: "CLI for UPS APIs (Tracking, Rating, Shipping)"
-#     homepage: "https://github.com/dl-alexandre/UPS-CLI"
-#     license: MIT
-#     persist:
-#       - "config.yaml"
+# Scoop configuration for Windows
+scoops:
+  - repository:
+      owner: dl-alexandre
+      name: scoop-bucket
+      token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
+      branch: main
+      pull_request:
+        enabled: false
+    commit_author:
+      name: goreleaserbot
+      email: goreleaser@carlosbecker.com
+    commit_msg_template: "Scoop update for {{ .ProjectName }} version {{ .Tag }}"
+    directory: bucket
+    description: "CLI for UPS APIs (Tracking, Rating, Shipping)"
+    homepage: "https://github.com/dl-alexandre/UPS-CLI"
+    license: MIT
+    skip_upload: "{{ if index .Env \"SCOOP_BUCKET_TOKEN\" }}false{{ else }}true{{ end }}"
+    persist:
+      - "config.yaml"
 
 # Docker configuration (optional - uncomment when ready)
 # dockers:
