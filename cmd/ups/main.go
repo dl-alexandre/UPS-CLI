@@ -8,6 +8,7 @@ import (
 	"github.com/alecthomas/kong"
 	"github.com/dl-alexandre/UPS-CLI/internal/cache"
 	"github.com/dl-alexandre/UPS-CLI/internal/cli"
+	cliver "github.com/dl-alexandre/cli-tools/version"
 )
 
 var (
@@ -17,12 +18,11 @@ var (
 )
 
 func main() {
-	// Set version info in cli package
-	cli.Version = version
-	cli.BinaryName = "ups"
-	cli.GitHubRepo = "UPS-CLI"
-	cli.GitCommit = gitCommit
-	cli.BuildTime = buildTime
+	// Set version info in cli-tools
+	cliver.Version = version
+	cliver.GitCommit = gitCommit
+	cliver.BuildTime = buildTime
+	cliver.BinaryName = "ups"
 
 	var c cli.CLI
 	ctx := kong.Parse(&c,
@@ -38,7 +38,7 @@ func main() {
 	)
 
 	if ctx.Command() == "version" {
-		fmt.Printf("ups %s (commit: %s) built %s\n", version, gitCommit, buildTime)
+		fmt.Printf("ups %s (commit: %s) built %s\n", cliver.Version, cliver.GitCommit, cliver.BuildTime)
 		os.Exit(0)
 	}
 

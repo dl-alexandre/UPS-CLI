@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/alecthomas/kong v1.15.0
+	github.com/dl-alexandre/cli-tools v0.0.1
 	github.com/go-resty/resty/v2 v2.17.2
 	github.com/mattn/go-isatty v0.0.21
 	github.com/rodaine/table v1.3.1
