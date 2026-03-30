@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/kong"
-	"github.com/dl-alexandre/UPS-CLI/internal/cache"
+	"github.com/dl-alexandre/cli-tools/cache"
 	"github.com/dl-alexandre/UPS-CLI/internal/cli"
 	cliver "github.com/dl-alexandre/cli-tools/version"
 )
@@ -49,7 +49,7 @@ func main() {
 		time.Sleep(100 * time.Millisecond)
 
 		// Use a minimal cache for update checks
-		updateCache := cache.New(cache.DefaultCacheDir(), 24*time.Hour)
+		updateCache := cache.New(cache.DefaultDir("ups"), 24*time.Hour)
 		cli.AutoUpdateCheck(updateCache)
 	}()
 
