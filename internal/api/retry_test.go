@@ -26,13 +26,13 @@ func TestDoWithRetry_POSTBodyResent(t *testing.T) {
 		if requestCount < 3 {
 			// Return 500 for first 2 requests
 			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{"error": "server error"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "server error"})
 			return
 		}
 
 		// Success on 3rd request
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	}))
 	defer server.Close()
 

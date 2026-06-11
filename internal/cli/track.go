@@ -81,7 +81,7 @@ func (c *TrackCmd) Run(globals *Globals) error {
 		if err != nil {
 			return fmt.Errorf("tracking failed: %w", err)
 		}
-		fmt.Fprintln(os.Stdout, string(body))
+		_, _ = fmt.Fprintln(os.Stdout, string(body))
 		return nil
 	}
 

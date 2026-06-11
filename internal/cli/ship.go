@@ -177,7 +177,7 @@ func (c *ShipCmd) runValidate(ctx context.Context, client *api.Client, req *api.
 		if err != nil {
 			return fmt.Errorf("validation failed: %w", err)
 		}
-		fmt.Fprintln(os.Stdout, string(body))
+		_, _ = fmt.Fprintln(os.Stdout, string(body))
 		return nil
 	}
 
@@ -208,7 +208,7 @@ func (c *ShipCmd) runCreate(ctx context.Context, client *api.Client, req *api.Sh
 		if err != nil {
 			return c.handleCreateError(err, transId)
 		}
-		fmt.Fprintln(os.Stdout, string(body))
+		_, _ = fmt.Fprintln(os.Stdout, string(body))
 	} else {
 		result, err := client.ShipCreateWithTransId(ctx, req, locale)
 		if err != nil {
@@ -313,7 +313,7 @@ func (c *ShipCmd) writeLabel(response *api.ShipmentResponse) error {
 		if pkg.ShippingLabel.GraphicImage == "" {
 			return fmt.Errorf("no ZPL label data in response")
 		}
-		fmt.Fprintln(os.Stdout, pkg.ShippingLabel.GraphicImage)
+		_, _ = fmt.Fprintln(os.Stdout, pkg.ShippingLabel.GraphicImage)
 		return nil
 	}
 
@@ -373,14 +373,14 @@ func (c *ShipCmd) writeLabel(response *api.ShipmentResponse) error {
 
 	// Sync to disk to ensure data is written
 	if file, err := os.Open(tempPath); err == nil {
-		file.Sync()
-		file.Close()
+		_ = file.Sync()
+		_ = file.Close()
 	}
 
 	// Atomic rename
 	if err := os.Rename(tempPath, cleanPath); err != nil {
 		// Clean up temp file on error
-		os.Remove(tempPath)
+		_ = os.Remove(tempPath)
 		return fmt.Errorf("failed to finalize label file: %w", err)
 	}
 

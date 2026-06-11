@@ -121,7 +121,7 @@ func (tp *TokenProvider) fetchToken(ctx context.Context) (string, time.Time, err
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("token request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Read response body
 	body, err := io.ReadAll(resp.Body)

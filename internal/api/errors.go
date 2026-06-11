@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/go-resty/resty/v2"
@@ -74,7 +75,8 @@ func ParseUPSError(resp *resty.Response) error {
 
 // IsRetryableError determines if an error should trigger a retry
 func IsRetryableError(err error) bool {
-	if upsErr, ok := err.(*UPSError); ok {
+	var upsErr *UPSError
+	if errors.As(err, &upsErr) {
 		switch upsErr.StatusCode {
 		case 429, 500, 502, 503, 504:
 			return true

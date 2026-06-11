@@ -105,7 +105,7 @@ func (c *RateCmd) Run(globals *Globals) error {
 		if err != nil {
 			return fmt.Errorf("rate request failed: %w", err)
 		}
-		fmt.Fprintln(os.Stdout, string(body))
+		_, _ = fmt.Fprintln(os.Stdout, string(body))
 		return nil
 	}
 

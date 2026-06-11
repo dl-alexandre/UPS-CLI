@@ -157,7 +157,3 @@ func calculateBackoff(attempt int, baseDelay, maxDelay time.Duration, retryAfter
 func generateTransactionID() string {
 	return fmt.Sprintf("upscli-%d", time.Now().UnixNano())
 }
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
