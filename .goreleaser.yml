@@ -143,20 +143,7 @@ brews:
     install: |
       bin.install "ups"
 
-flatpak:
-  - app_id: net.ddns.dl-alexandre.UPSCLI
-    runtime: org.freedesktop.Platform
-    runtime_version: "24.08"
-    sdk: org.freedesktop.Sdk
-    finish_args:
-      - --share=network
-      - --filesystem=home
 
-srpm:
-  enabled: true
-  summary: "CLI for UPS APIs (Tracking, Rating, Shipping)"
-  license: MIT
-  url: https://github.com/dl-alexandre/UPS-CLI
 
 scoops:
   - repository:
